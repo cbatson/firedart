@@ -32,9 +32,9 @@ class Firestore {
   /* Instance interface */
   final FirestoreGateway _gateway;
 
-  Firestore(String projectId, {String? databaseId, FirebaseAuth? auth})
+  Firestore(String projectId, {String? databaseId, FirebaseAuth? auth, String? host, bool ssl = true})
       : _gateway =
-            FirestoreGateway(projectId, databaseId: databaseId, auth: auth),
+            FirestoreGateway(projectId, databaseId: databaseId, auth: auth, host: host, ssl: ssl),
         assert(projectId.isNotEmpty);
 
   Reference reference(String path) => Reference.create(_gateway, path);

@@ -75,13 +75,17 @@ class _FirestoreGatewayStreamCache {
 class FirestoreGateway {
   final FirebaseAuth? auth;
   final String database;
+  final String host;
+  final bool ssl;
 
   final Map<String, _FirestoreGatewayStreamCache> _listenRequestStreamMap;
 
   late FirestoreClient _client;
 
-  FirestoreGateway(String projectId, {String? databaseId, this.auth})
-      : database =
+  FirestoreGateway(String projectId, {String? databaseId, this.auth, String? host, bool ssl = true})
+      : host = host ?? 'firestore.googleapis.com',
+        ssl = (host == null) || ssl,
+        database =
             'projects/$projectId/databases/${databaseId ?? '(default)'}/documents',
         _listenRequestStreamMap = <String, _FirestoreGatewayStreamCache>{} {
     _setupClient();
@@ -118,7 +122,7 @@ class FirestoreGateway {
       ..addTarget = target;
 
     final listenRequestStream = _FirestoreGatewayStreamCache(
-        onDone: _handleDone, userInfo: path, onError: _handleError);
+        onDone: _handleDone, userInfo: path, onError: _handleError2);
     _listenRequestStreamMap[path] = listenRequestStream;
 
     listenRequestStream.setListenRequest(request, _client, database);
@@ -181,7 +185,7 @@ class FirestoreGateway {
       ..addTarget = target;
 
     final listenRequestStream = _FirestoreGatewayStreamCache(
-        onDone: _handleDone, userInfo: path, onError: _handleError);
+        onDone: _handleDone, userInfo: path, onError: _handleError2);
     _listenRequestStreamMap[path] = listenRequestStream;
 
     listenRequestStream.setListenRequest(request, _client, database);
@@ -203,11 +207,38 @@ class FirestoreGateway {
 
   void _setupClient() {
     _listenRequestStreamMap.clear();
-    _client = FirestoreClient(ClientChannel('firestore.googleapis.com'),
+    final hostParts = host.split(':');
+    final hostName = hostParts[0];
+    final hostPort = (hostParts.length > 1) ? int.parse(hostParts[1]) : 443;
+print('hostName=$hostName hostPort=$hostPort ssl=$ssl');
+    final channel = ClientChannel(
+      hostName,
+      port: hostPort,
+      options: ChannelOptions(
+        credentials: ssl ? const ChannelCredentials.secure() : const ChannelCredentials.insecure(),
+      ),
+    );
+    _client = FirestoreClient(channel,
         options: TokenAuthenticator.from(auth)?.toCallOptions);
   }
 
-  void _handleError(e) {
+  void _handleError(Object e, StackTrace stackTrace) {
+    print('MY Handling error $e using FirestoreGateway._handleError\n$stackTrace');
+    if (e is GrpcError &&
+        [
+          StatusCode.unknown,
+          StatusCode.unimplemented,
+          StatusCode.internal,
+          StatusCode.unavailable,
+          StatusCode.unauthenticated,
+          StatusCode.dataLoss,
+        ].contains(e.code)) {
+      _setupClient();
+    }
+    throw e;
+  }
+
+  void _handleError2(e) {
     print('Handling error $e using FirestoreGateway._handleError');
     if (e is GrpcError &&
         [
